@@ -7,7 +7,9 @@ public class ParallelExplorer implements Explorer {
 	private final List<ThreadAndPosition> threadsAndPositions;
 	private ThreadsFactory threadsFactory;
 	private Table2D table;
-	private volatile boolean[] globalVisited;
+	private volatile boolean[] visited;
+	private volatile boolean[] explored;
+	private volatile int[] values;
 	private CountDownLatch latch;
 	private boolean resultsReady;
 	private int rows;
@@ -31,7 +33,9 @@ public class ParallelExplorer implements Explorer {
 		this.rows = table.rows();
 		this.cols = table.cols();
 
-		this.globalVisited = new boolean[rows * cols];
+		this.visited = new boolean[rows * cols];
+		this.explored = new boolean[rows * cols];
+		this.values = new int[rows * cols];
 	}
 
 	@Override
@@ -49,8 +53,8 @@ public class ParallelExplorer implements Explorer {
 		Thread writerThread = threadsFactory.writterThread(() -> {
 			try {
 				while (latch.getCount() != 0 || !writeQueue.isEmpty()) {
-					Pair pair = writeQueue.poll(10, TimeUnit.MILLISECONDS);
-					if (pair != null && table.get(pair.first()) + table.get(pair.second()) == sum) {
+					Pair pair = writeQueue.poll(100, TimeUnit.MILLISECONDS);
+					if (pair != null) {
 						result.add(pair);
 						table.set0(pair.first());
 						table.set0(pair.second());
@@ -90,18 +94,33 @@ public class ParallelExplorer implements Explorer {
 
 		while (!toExplore.isEmpty()) {
 			Position2D current = toExplore.poll();
-			if (isVisited(current)) {
+			if (isExplored(current)) {
 				continue;
 			}
+			int currentValue;
+			if (isVisited(current)) {
+				currentValue = getValue(current);
+			} else {
+				currentValue = table.get(current);
+				setValue(current, currentValue);
+				markVisited(current);
+			}
+			markExplored(current);
 
-			int currentValue = table.get(current);
 			boolean localPairFound = false;
 
 			for (Position2D neighbor : getNeighbors(current)) {
-				if (isVisited(neighbor)) {
+				if (isExplored(neighbor)) {
 					continue;
 				}
-				int neighborValue = table.get(neighbor);
+				int neighborValue;
+				if (isVisited(neighbor)) {
+					neighborValue = getValue(neighbor);
+				} else {
+					neighborValue = table.get(neighbor);
+					setValue(neighbor, neighborValue);
+					markVisited(neighbor);
+				}
 
 				if (currentValue + neighborValue == sum && !localPairFound) {
 					Pair pair = new Pair(current, neighbor);
@@ -111,7 +130,6 @@ public class ParallelExplorer implements Explorer {
 
 				toExplore.add(neighbor);
 			}
-			markVisited(current);
 		}
 		latch.countDown();
 	}
@@ -141,11 +159,31 @@ public class ParallelExplorer implements Explorer {
 
 	private boolean isVisited(Position2D position) {
 		int index = position.row() * cols + position.col();
-		return globalVisited[index];
+		return visited[index];
 	}
 
 	private synchronized void markVisited(Position2D position) {
 		int index = position.row() * cols + position.col();
-		globalVisited[index] = true;
+		visited[index] = true;
+	}
+
+	private boolean isExplored(Position2D position) {
+		int index = position.row() * cols + position.col();
+		return explored[index];
+	}
+
+	private synchronized void markExplored(Position2D position) {
+		int index = position.row() * cols + position.col();
+		explored[index] = true;
+	}
+
+	private int getValue(Position2D position) {
+		int index = position.row() * cols + position.col();
+		return values[index];
+	}
+
+	private synchronized void setValue(Position2D position, int value) {
+		int index = position.row() * cols + position.col();
+		values[index] = value;
 	}
 }
