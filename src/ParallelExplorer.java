@@ -1,5 +1,7 @@
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class ParallelExplorer implements Explorer {
 	private final Set<Pair> result;
@@ -7,9 +9,9 @@ public class ParallelExplorer implements Explorer {
 	private final List<ThreadAndPosition> threadsAndPositions;
 	private ThreadsFactory threadsFactory;
 	private Table2D table;
-	private volatile boolean[] visited;
-	private volatile boolean[] explored;
-	private volatile int[] values;
+	private AtomicBoolean[] visited;
+	private AtomicBoolean[] explored;
+	private AtomicInteger[] values;
 	private CountDownLatch latch;
 	private boolean resultsReady;
 	private int rows;
@@ -34,9 +36,14 @@ public class ParallelExplorer implements Explorer {
 		this.rows = table.rows();
 		this.cols = table.cols();
 
-		this.visited = new boolean[rows * cols];
-		this.explored = new boolean[rows * cols];
-		this.values = new int[rows * cols];
+		this.visited = new AtomicBoolean[rows * cols];
+		this.explored = new AtomicBoolean[rows * cols];
+		this.values = new AtomicInteger[rows * cols];
+		for (int i = 0; i < rows * cols; i++) {
+			visited[i] = new AtomicBoolean(false);
+			explored[i] = new AtomicBoolean(false);
+			values[i] = new AtomicInteger(0);
+		}
 	}
 
 	@Override
@@ -164,31 +171,31 @@ public class ParallelExplorer implements Explorer {
 
 	private boolean isVisited(Position2D position) {
 		int index = position.row() * cols + position.col();
-		return visited[index];
+		return visited[index].get();
 	}
 
-	private synchronized void markVisited(Position2D position) {
+	private void markVisited(Position2D position) {
 		int index = position.row() * cols + position.col();
-		visited[index] = true;
+		visited[index].set(true);
 	}
 
 	private boolean isExplored(Position2D position) {
 		int index = position.row() * cols + position.col();
-		return explored[index];
+		return explored[index].get();
 	}
 
-	private synchronized void markExplored(Position2D position) {
+	private void markExplored(Position2D position) {
 		int index = position.row() * cols + position.col();
-		explored[index] = true;
+		explored[index].set(true);
 	}
 
 	private int getValue(Position2D position) {
 		int index = position.row() * cols + position.col();
-		return values[index];
+		return values[index].get();
 	}
 
-	private synchronized void setValue(Position2D position, int value) {
+	private void setValue(Position2D position, int value) {
 		int index = position.row() * cols + position.col();
-		values[index] = value;
+		values[index].set(value);
 	}
 }
