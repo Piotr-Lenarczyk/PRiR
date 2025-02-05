@@ -14,6 +14,7 @@ public class ParallelExplorer implements Explorer {
 	private boolean resultsReady;
 	private int rows;
 	private int cols;
+	private static final Pair POISON_PILL = new Pair(new Position2D(0, 0), new Position2D(0, 0));
 
 	public ParallelExplorer() {
 		this.result = ConcurrentHashMap.newKeySet();
@@ -52,15 +53,16 @@ public class ParallelExplorer implements Explorer {
 
 		Thread writerThread = threadsFactory.writterThread(() -> {
 			try {
-				while (latch.getCount() != 0 || !writeQueue.isEmpty()) {
-					Pair pair = writeQueue.poll(100, TimeUnit.MILLISECONDS);
-					if (pair != null) {
-						result.add(pair);
-						table.set0(pair.first());
-						table.set0(pair.second());
-						markVisited(pair.first());
-						markVisited(pair.second());
+				while (true) {
+					Pair pair = writeQueue.take();
+					if (pair.equals(POISON_PILL)) {
+						break;
 					}
+					result.add(pair);
+					table.set0(pair.first());
+					table.set0(pair.second());
+					markVisited(pair.first());
+					markVisited(pair.second());
 				}
 				resultsReady = true;
 			} catch (InterruptedException ignored) {
@@ -132,6 +134,9 @@ public class ParallelExplorer implements Explorer {
 			}
 		}
 		latch.countDown();
+		if (latch.getCount() == 0) {
+			writeQueue.add(POISON_PILL);
+		}
 	}
 
 	private List<Position2D> getNeighbors(Position2D position) {
